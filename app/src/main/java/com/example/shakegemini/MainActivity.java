@@ -1,6 +1,7 @@
 package com.example.shakegemini;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -37,6 +38,7 @@ public class MainActivity extends Activity {
     private TextView statusGeminiApp;
     private TextView statusAccessibility;
     private TextView statusOverlay;
+    private LinearLayout bannerA11yWarning;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,13 +62,33 @@ public class MainActivity extends Activity {
         title.setPadding(0, 0, 0, 10);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Shake your phone to launch Google Gemini and trigger voice message mode for coding, complex planning & academic research.");
+        subtitle.setText("Shake phone to launch Gemini and automatically trigger Voice / Microphone mode.");
         subtitle.setTextSize(14);
         subtitle.setTextColor(Color.DKGRAY);
-        subtitle.setPadding(0, 0, 0, 40);
+        subtitle.setPadding(0, 0, 0, 30);
 
         root.addView(title);
         root.addView(subtitle);
+
+        // Accessibility Missing Banner (visible when A11y is disabled)
+        bannerA11yWarning = new LinearLayout(this);
+        bannerA11yWarning.setOrientation(LinearLayout.VERTICAL);
+        bannerA11yWarning.setPadding(32, 24, 32, 24);
+        bannerA11yWarning.setBackgroundColor(Color.parseColor("#FEF3C7")); // warm amber
+
+        TextView bannerText = new TextView(this);
+        bannerText.setText("⚠️ Microphone Auto-Trigger is OFF\nTap here to turn on 'ShakeGemini Voice Helper' in Accessibility Settings so Gemini starts directly in microphone mode.");
+        bannerText.setTextColor(Color.parseColor("#92400E"));
+        bannerText.setTextSize(13);
+        bannerText.setTypeface(null, Typeface.BOLD);
+        bannerA11yWarning.addView(bannerText);
+        bannerA11yWarning.setOnClickListener(v -> openAccessibilitySettings());
+
+        LinearLayout.LayoutParams bannerParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        bannerParams.setMargins(0, 0, 0, 30);
+        bannerA11yWarning.setLayoutParams(bannerParams);
+        root.addView(bannerA11yWarning);
 
         // System Status Card
         LinearLayout statusCard = new LinearLayout(this);
@@ -75,7 +97,7 @@ public class MainActivity extends Activity {
         statusCard.setBackgroundColor(Color.parseColor("#F1F5F9"));
 
         TextView statusTitle = new TextView(this);
-        statusTitle.setText("System Setup Status:");
+        statusTitle.setText("Setup & Permissions Status:");
         statusTitle.setTypeface(null, Typeface.BOLD);
         statusTitle.setPadding(0, 0, 0, 16);
         statusCard.addView(statusTitle);
@@ -89,25 +111,18 @@ public class MainActivity extends Activity {
         statusAccessibility = new TextView(this);
         statusCard.addView(statusAccessibility);
 
-        // Setup shortcut buttons
+        // Quick settings buttons
         LinearLayout setupButtons = new LinearLayout(this);
         setupButtons.setOrientation(LinearLayout.HORIZONTAL);
         setupButtons.setPadding(0, 16, 0, 0);
 
         Button btnA11y = new Button(this);
-        btnA11y.setText("Accessibility");
+        btnA11y.setText("1. Open Accessibility");
         btnA11y.setTextSize(12);
-        btnA11y.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-                Toast.makeText(this, "Enable 'ShakeGemini Voice Helper' in Installed Services", Toast.LENGTH_LONG).show();
-            } catch (Exception e) {
-                Toast.makeText(this, "Unable to open Accessibility Settings", Toast.LENGTH_SHORT).show();
-            }
-        });
+        btnA11y.setOnClickListener(v -> openAccessibilitySettings());
 
         Button btnAssistant = new Button(this);
-        btnAssistant.setText("Default Assistant");
+        btnAssistant.setText("2. Digital Assistant");
         btnAssistant.setTextSize(12);
         btnAssistant.setOnClickListener(v -> {
             try {
@@ -131,7 +146,6 @@ public class MainActivity extends Activity {
         statusCard.addView(setupButtons);
         root.addView(statusCard);
 
-        // Spacer
         addSpacer(root, 36);
 
         // Trigger Mode Section
@@ -146,12 +160,12 @@ public class MainActivity extends Activity {
 
         RadioButton rbAppVoice = new RadioButton(this);
         rbAppVoice.setId(View.generateViewId());
-        rbAppVoice.setText("1. Gemini App + Voice Message Mode (Recommended)\nOpens Gemini and auto-triggers microphone for dictation.");
+        rbAppVoice.setText("1. Gemini App + Voice Mode (Recommended)\nOpens Gemini and automatically triggers microphone for dictation.");
         rbAppVoice.setPadding(0, 0, 0, 16);
 
         RadioButton rbOverlay = new RadioButton(this);
         rbOverlay.setId(View.generateViewId());
-        rbOverlay.setText("2. Gemini Voice Assistant Overlay\nInvokes system assistant overlay (requires Gemini set as default assistant).");
+        rbOverlay.setText("2. Gemini Voice Assistant Overlay\nInvokes floating assistant overlay (requires Gemini set as default assistant).");
         rbOverlay.setPadding(0, 0, 0, 16);
 
         RadioButton rbAppOnly = new RadioButton(this);
@@ -199,7 +213,7 @@ public class MainActivity extends Activity {
         root.addView(thresholdLabel);
 
         SeekBar seekBar = new SeekBar(this);
-        seekBar.setMax(30); // 1.5G to 4.5G
+        seekBar.setMax(30);
         int initialProgress = Math.round((currentThreshold - 1.5f) * 10);
         seekBar.setProgress(Math.max(0, Math.min(30, initialProgress)));
 
@@ -223,32 +237,22 @@ public class MainActivity extends Activity {
 
         addSpacer(root, 36);
 
-        // Control Buttons
+        // Action Buttons
         Button startBtn = new Button(this);
         startBtn.setText("1. Start Shake Listener Service");
-        startBtn.setOnClickListener(v -> {
-            if (!Settings.canDrawOverlays(this)) {
-                Toast.makeText(this, "Grant 'Display over other apps' to allow launching from background!", Toast.LENGTH_LONG).show();
-                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } else {
-                Intent serviceIntent = new Intent(this, ShakeService.class);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent);
-                } else {
-                    startService(serviceIntent);
-                }
-                Toast.makeText(this, "Shake Listener Active! Shake your phone to test.", Toast.LENGTH_SHORT).show();
-            }
-        });
+        startBtn.setOnClickListener(v -> checkPermissionsAndStartService());
         root.addView(startBtn);
 
         Button testBtn = new Button(this);
-        testBtn.setText("2. Test Gemini Trigger Now");
+        testBtn.setText("2. Test Gemini Voice Trigger Now");
         testBtn.setOnClickListener(v -> {
-            Toast.makeText(this, "Testing Gemini trigger...", Toast.LENGTH_SHORT).show();
-            ShakeService.launchGemini(this, prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE));
+            if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this)
+                    && prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE) == MODE_GEMINI_APP_VOICE) {
+                showAccessibilityPromptDialog();
+            } else {
+                Toast.makeText(this, "Testing Gemini trigger...", Toast.LENGTH_SHORT).show();
+                ShakeService.launchGemini(this, prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE));
+            }
         });
         root.addView(testBtn);
 
@@ -262,18 +266,63 @@ public class MainActivity extends Activity {
 
         addSpacer(root, 28);
 
-        // Infinix Hot 12 Pro Specific Instructions
         TextView infinixInfo = new TextView(this);
         infinixInfo.setText("Infinix Hot 12 Pro (Android 12) Tips:\n" +
                 "• Lock ShakeGemini in Recents screen to prevent background kill.\n" +
-                "• In Settings > Battery Lab > App Power Consumption > ShakeGemini, choose 'Don't Optimize'.\n" +
-                "• Enable ShakeGemini Voice Helper in Accessibility for automatic mic clicks.");
+                "• In Settings > Battery Lab > ShakeGemini, choose 'Don't Optimize'.\n" +
+                "• In Accessibility > Installed Services, turn ON 'ShakeGemini Voice Helper'.");
         infinixInfo.setTextSize(12);
         infinixInfo.setTextColor(Color.GRAY);
         root.addView(infinixInfo);
 
         setContentView(scrollView);
         updateStatus();
+    }
+
+    private void checkPermissionsAndStartService() {
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Grant 'Display over other apps' to allow launching from background!", Toast.LENGTH_LONG).show();
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+            return;
+        }
+
+        if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this)
+                && prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE) == MODE_GEMINI_APP_VOICE) {
+            showAccessibilityPromptDialog();
+            return;
+        }
+
+        startShakeService();
+    }
+
+    private void showAccessibilityPromptDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Enable Voice Auto-Trigger")
+                .setMessage("To automatically tap the Microphone button inside Gemini when you shake, enable 'ShakeGemini Voice Helper' in Accessibility Settings.\n\nTap 'Enable Now' -> Look for 'Installed Services' or 'Downloaded Apps' -> Turn 'ShakeGemini Voice Helper' ON.")
+                .setPositiveButton("Enable Now", (d, w) -> openAccessibilitySettings())
+                .setNegativeButton("Skip for Now", (d, w) -> startShakeService())
+                .show();
+    }
+
+    private void openAccessibilitySettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            Toast.makeText(this, "Find 'ShakeGemini Voice Helper' in Installed Services and turn it ON", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Unable to open Accessibility Settings", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void startShakeService() {
+        Intent serviceIntent = new Intent(this, ShakeService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
+        Toast.makeText(this, "Shake Listener Active! Shake your phone to test.", Toast.LENGTH_SHORT).show();
     }
 
     @Override
@@ -283,29 +332,19 @@ public class MainActivity extends Activity {
     }
 
     private void updateStatus() {
-        // Overlay permission
         boolean hasOverlay = Settings.canDrawOverlays(this);
         statusOverlay.setText("• Display Over Other Apps: " + (hasOverlay ? "Granted ✓" : "Missing ✕ (Required)"));
         statusOverlay.setTextColor(hasOverlay ? Color.parseColor("#166534") : Color.parseColor("#991B1B"));
 
-        // Gemini App installation
         boolean hasGemini = isPackageInstalled(ShakeService.PACKAGE_GEMINI);
         statusGeminiApp.setText("• Gemini App: " + (hasGemini ? "Installed ✓" : "Not Found (Click to Install)"));
         statusGeminiApp.setTextColor(hasGemini ? Color.parseColor("#166534") : Color.parseColor("#C2410C"));
-        if (!hasGemini) {
-            statusGeminiApp.setOnClickListener(v -> {
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + ShakeService.PACKAGE_GEMINI)));
-                } catch (Exception e) {
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + ShakeService.PACKAGE_GEMINI)));
-                }
-            });
-        }
 
-        // Accessibility helper
         boolean a11yActive = GeminiVoiceAccessibilityService.isAccessibilityEnabled(this);
-        statusAccessibility.setText("• Voice Auto-Trigger Helper: " + (a11yActive ? "Active ✓" : "Disabled (Enable in Accessibility)"));
-        statusAccessibility.setTextColor(a11yActive ? Color.parseColor("#166534") : Color.parseColor("#475569"));
+        statusAccessibility.setText("• Voice Auto-Trigger Helper: " + (a11yActive ? "Active ✓" : "Disabled ✕ (Required for Mic Auto-Click)"));
+        statusAccessibility.setTextColor(a11yActive ? Color.parseColor("#166534") : Color.parseColor("#DC2626"));
+
+        bannerA11yWarning.setVisibility(a11yActive ? View.GONE : View.VISIBLE);
     }
 
     private boolean isPackageInstalled(String pkgName) {
