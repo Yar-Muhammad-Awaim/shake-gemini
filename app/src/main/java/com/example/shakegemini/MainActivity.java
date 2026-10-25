@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
         title.setPadding(0, 0, 0, 10);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Shake phone to launch Gemini and automatically trigger Voice / Microphone mode.");
+        subtitle.setText("Shake phone to launch Gemini and dictate your prompt using the microphone. Gemini replies with text & code formatting (not spoken voice).");
         subtitle.setTextSize(14);
         subtitle.setTextColor(Color.DKGRAY);
         subtitle.setPadding(0, 0, 0, 30);
@@ -160,12 +160,12 @@ public class MainActivity extends Activity {
 
         RadioButton rbAppVoice = new RadioButton(this);
         rbAppVoice.setId(View.generateViewId());
-        rbAppVoice.setText("1. Gemini App + Voice Mode (Recommended)\nOpens Gemini and automatically triggers microphone for dictation.");
+        rbAppVoice.setText("1. Voice Message Mode (Replies in Text) [Recommended]\nOpens Gemini and taps the Microphone so you speak your prompt. Gemini replies in formatted text & code (NOT spoken voice).");
         rbAppVoice.setPadding(0, 0, 0, 16);
 
         RadioButton rbOverlay = new RadioButton(this);
         rbOverlay.setId(View.generateViewId());
-        rbOverlay.setText("2. Gemini Voice Assistant Overlay\nInvokes floating assistant overlay (requires Gemini set as default assistant).");
+        rbOverlay.setText("2. Gemini Live / Voice Mode (Replies in Voice)\nStarts continuous two-way audio where Gemini speaks back in voice.");
         rbOverlay.setPadding(0, 0, 0, 16);
 
         RadioButton rbAppOnly = new RadioButton(this);

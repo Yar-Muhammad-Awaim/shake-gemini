@@ -15,6 +15,7 @@ import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -31,7 +32,7 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
     public static void requestAutoVoiceClick() {
         pendingAutoClick = true;
         requestTimestamp = SystemClock.uptimeMillis();
-        Log.d(TAG, "Gemini voice auto-trigger armed");
+        Log.d(TAG, "Gemini Voice-to-Text auto-trigger armed");
 
         if (instance != null) {
             instance.startRetryPolling();
@@ -58,7 +59,7 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         super.onServiceConnected();
         instance = this;
         mainHandler = new Handler(Looper.getMainLooper());
-        Log.d(TAG, "Accessibility service connected and armed");
+        Log.d(TAG, "Accessibility service connected and armed for voice-to-text");
 
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
@@ -88,16 +89,14 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
 
                 if (tryClickVoiceOnActiveScreen()) {
                     pendingAutoClick = false;
-                    Log.d(TAG, "Voice button successfully clicked by polling loop!");
+                    Log.d(TAG, "Microphone (voice-to-text) button clicked successfully!");
                     return;
                 }
 
-                // Poll again in 200ms
                 mainHandler.postDelayed(this, 200);
             }
         };
 
-        // Delay first check slightly to let the Gemini window animate in
         mainHandler.postDelayed(checkRunnable, 350);
     }
 
@@ -117,21 +116,17 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         if (pkg.contains("apps.bard") || pkg.contains("googlequicksearchbox")) {
             if (tryClickVoiceOnActiveScreen()) {
                 pendingAutoClick = false;
-                Log.d(TAG, "Voice button clicked via accessibility event!");
+                Log.d(TAG, "Microphone (voice-to-text) clicked via event!");
             }
         }
     }
 
     private boolean tryClickVoiceOnActiveScreen() {
-        // 1. Check primary active window root
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root != null) {
             try {
                 if (isGeminiWindow(root)) {
-                    if (searchAndClickVoice(root, 0)) {
-                        return true;
-                    }
-                    if (fallbackBottomRightClick(root)) {
+                    if (selectAndClickMicButton(root)) {
                         return true;
                     }
                 }
@@ -140,7 +135,6 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
             }
         }
 
-        // 2. Also inspect all interactive windows (e.g., bottom sheets, overlays)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             List<AccessibilityWindowInfo> windows = getWindows();
             if (windows != null) {
@@ -149,10 +143,7 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
                     if (winRoot != null) {
                         try {
                             if (isGeminiWindow(winRoot)) {
-                                if (searchAndClickVoice(winRoot, 0)) {
-                                    return true;
-                                }
-                                if (fallbackBottomRightClick(winRoot)) {
+                                if (selectAndClickMicButton(winRoot)) {
                                     return true;
                                 }
                             }
@@ -175,40 +166,40 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         return false;
     }
 
-    private boolean searchAndClickVoice(AccessibilityNodeInfo node, int depth) {
-        if (node == null || depth > 25) return false;
+    private boolean isLiveNode(AccessibilityNodeInfo node) {
+        if (node == null) return false;
 
-        if (isVoiceNode(node)) {
-            Log.d(TAG, "Found voice node: " + node.getContentDescription() + " | " + node.getViewIdResourceName());
-            if (clickNodeWithGesture(node)) {
-                return true;
-            }
+        CharSequence desc = node.getContentDescription();
+        if (desc != null && desc.toString().toLowerCase(Locale.ROOT).contains("live")) {
+            return true;
         }
 
-        int count = node.getChildCount();
-        for (int i = 0; i < count; i++) {
-            AccessibilityNodeInfo child = node.getChild(i);
-            if (child != null) {
-                try {
-                    if (searchAndClickVoice(child, depth + 1)) {
-                        return true;
-                    }
-                } finally {
-                    child.recycle();
-                }
-            }
+        String id = node.getViewIdResourceName();
+        if (id != null && id.toLowerCase(Locale.ROOT).contains("live")) {
+            return true;
         }
+
+        CharSequence text = node.getText();
+        if (text != null && text.toString().toLowerCase(Locale.ROOT).contains("live")) {
+            return true;
+        }
+
         return false;
     }
 
-    private boolean isVoiceNode(AccessibilityNodeInfo node) {
-        // 1. Content Description
+    private boolean isTextVoiceMicNode(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        // Strictly exclude Gemini Live!
+        if (isLiveNode(node)) return false;
+
+        // 1. Content Description (e.g. "Microphone", "Voice search", "Use microphone", "Voice input", "Dictate")
         CharSequence desc = node.getContentDescription();
         if (desc != null) {
             String d = desc.toString().toLowerCase(Locale.ROOT);
+            if (d.contains("live")) return false;
             if (d.contains("mic") || d.contains("voice") || d.contains("speak") ||
-                d.contains("dictat") || d.contains("talk") || d.contains("live") ||
-                d.contains("audio") || d.contains("record") || d.contains("speech")) {
+                d.contains("dictat") || d.contains("audio") || d.contains("record") ||
+                d.contains("speech") || d.contains("sound")) {
                 return true;
             }
         }
@@ -217,8 +208,9 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         String viewId = node.getViewIdResourceName();
         if (viewId != null) {
             String v = viewId.toLowerCase(Locale.ROOT);
+            if (v.contains("live")) return false;
             if (v.contains("mic") || v.contains("voice") || v.contains("speech") ||
-                v.contains("live") || v.contains("audio") || v.contains("dictat")) {
+                v.contains("dictat") || v.contains("audio")) {
                 return true;
             }
         }
@@ -227,7 +219,8 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         CharSequence text = node.getText();
         if (text != null) {
             String t = text.toString().toLowerCase(Locale.ROOT);
-            if (t.contains("live") || t.contains("voice") || t.contains("mic") || t.contains("speak")) {
+            if (t.contains("live")) return false;
+            if (t.contains("mic") || t.contains("voice") || t.contains("speak")) {
                 return true;
             }
         }
@@ -235,35 +228,90 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         return false;
     }
 
-    // Fallback: If no node matched the keyword search, find the bottom prompt bar's mic/live button
-    private boolean fallbackBottomRightClick(AccessibilityNodeInfo root) {
+    private boolean selectAndClickMicButton(AccessibilityNodeInfo root) {
         Rect screenBounds = new Rect();
         root.getBoundsInScreen(screenBounds);
-        int screenHeight = screenBounds.height();
-        if (screenHeight <= 0) screenHeight = 2400;
+        int screenHeight = screenBounds.height() > 0 ? screenBounds.height() : getResources().getDisplayMetrics().heightPixels;
+        int screenWidth = screenBounds.width() > 0 ? screenBounds.width() : getResources().getDisplayMetrics().widthPixels;
 
-        return findCandidateNearBottom(root, screenHeight, 0);
+        List<AccessibilityNodeInfo> micCandidates = new ArrayList<>();
+        List<AccessibilityNodeInfo> allBottomIcons = new ArrayList<>();
+
+        collectCandidateNodes(root, micCandidates, allBottomIcons, screenHeight, screenWidth, 0);
+
+        // Priority 1: Explicit matching node that is NOT Live
+        if (!micCandidates.isEmpty()) {
+            AccessibilityNodeInfo bestMic = null;
+            for (AccessibilityNodeInfo cand : micCandidates) {
+                Rect b = new Rect();
+                cand.getBoundsInScreen(b);
+                // Prefer mic in the bottom input bar region
+                if (b.bottom > screenHeight * 0.60) {
+                    bestMic = cand;
+                    break;
+                }
+            }
+            if (bestMic == null) bestMic = micCandidates.get(0);
+
+            Log.d(TAG, "Selected explicit Microphone (voice-to-text) node: " + bestMic.getContentDescription());
+            return clickNodeWithGesture(bestMic);
+        }
+
+        // Priority 2: Fallback bottom row icons
+        if (!allBottomIcons.isEmpty()) {
+            allBottomIcons.sort((a, b) -> {
+                Rect ra = new Rect();
+                Rect rb = new Rect();
+                a.getBoundsInScreen(ra);
+                b.getBoundsInScreen(rb);
+                return Integer.compare(ra.centerX(), rb.centerX());
+            });
+
+            AccessibilityNodeInfo chosenNode = null;
+            if (allBottomIcons.size() >= 2) {
+                // In Gemini, layout on right is: [..., Microphone, Gemini Live]
+                // Pick the icon before the far-right one (the Microphone)!
+                chosenNode = allBottomIcons.get(allBottomIcons.size() - 2);
+            } else {
+                chosenNode = allBottomIcons.get(0);
+                Rect b = new Rect();
+                chosenNode.getBoundsInScreen(b);
+                // If it is at the extreme far right (>92%), it's Gemini Live, avoid it!
+                if (b.centerX() > screenWidth * 0.92) {
+                    Log.w(TAG, "Only icon found is at extreme right edge (Gemini Live), skipping.");
+                    return false;
+                }
+            }
+
+            if (chosenNode != null) {
+                Log.d(TAG, "Selected fallback Microphone icon (replies in text)");
+                return clickNodeWithGesture(chosenNode);
+            }
+        }
+
+        return false;
     }
 
-    private boolean findCandidateNearBottom(AccessibilityNodeInfo node, int screenHeight, int depth) {
-        if (node == null || depth > 25) return false;
+    private void collectCandidateNodes(AccessibilityNodeInfo node,
+                                       List<AccessibilityNodeInfo> micCandidates,
+                                       List<AccessibilityNodeInfo> allBottomIcons,
+                                       int screenHeight, int screenWidth, int depth) {
+        if (node == null || depth > 30) return;
 
         Rect bounds = new Rect();
         node.getBoundsInScreen(bounds);
 
-        // Look for buttons located in the bottom 30% of the screen
-        if (bounds.bottom > (screenHeight * 0.70) && bounds.width() > 30 && bounds.height() > 30) {
+        boolean isLive = isLiveNode(node);
+
+        if (!isLive && isTextVoiceMicNode(node)) {
+            micCandidates.add(node);
+        } else if (bounds.bottom > (screenHeight * 0.70) && bounds.width() > 25 && bounds.height() > 25) {
             CharSequence className = node.getClassName();
-            if (className != null) {
-                String cls = className.toString();
-                if (cls.contains("Button") || cls.contains("ImageView") || node.isClickable()) {
-                    // Check if it's placed on the right side of the bottom row (where mic icon sits)
-                    if (bounds.centerX() > (screenBoundsWidth() * 0.55)) {
-                        Log.d(TAG, "Fallback click on bottom-right action icon at: " + bounds);
-                        if (clickNodeWithGesture(node)) {
-                            return true;
-                        }
-                    }
+            String cls = className != null ? className.toString() : "";
+            if (cls.contains("Button") || cls.contains("ImageView") || node.isClickable()) {
+                // Must be on the right side of prompt bar (x > 40%), but not Live
+                if (!isLive && bounds.centerX() > (screenWidth * 0.40)) {
+                    allBottomIcons.add(node);
                 }
             }
         }
@@ -272,20 +320,9 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         for (int i = 0; i < count; i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                try {
-                    if (findCandidateNearBottom(child, screenHeight, depth + 1)) {
-                        return true;
-                    }
-                } finally {
-                    child.recycle();
-                }
+                collectCandidateNodes(child, micCandidates, allBottomIcons, screenHeight, screenWidth, depth + 1);
             }
         }
-        return false;
-    }
-
-    private int screenBoundsWidth() {
-        return getResources().getDisplayMetrics().widthPixels;
     }
 
     private boolean clickNodeWithGesture(AccessibilityNodeInfo node) {
@@ -317,7 +354,7 @@ public class GeminiVoiceAccessibilityService extends AccessibilityService {
         // 3. Physical touch tap via dispatchGesture (simulates physical finger tap at exact icon coordinates)
         boolean gestureSuccess = dispatchTap(x, y);
 
-        Log.d(TAG, "Click attempt at (" + x + ", " + y + ") a11y=" + clicked + " gesture=" + gestureSuccess);
+        Log.d(TAG, "Tapped Microphone at (" + x + ", " + y + ") a11y=" + clicked + " gesture=" + gestureSuccess);
         return clicked || gestureSuccess;
     }
 
