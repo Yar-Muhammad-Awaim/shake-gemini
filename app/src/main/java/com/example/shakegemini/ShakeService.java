@@ -124,7 +124,7 @@ public class ShakeService extends Service implements SensorEventListener {
     }
 
     private static void launchVoiceAssistOverlay(Context context) {
-        Intent assistIntent = new Intent(Intent.ACTION_VOICE_ASSIST);
+        Intent assistIntent = new Intent("android.intent.action.VOICE_ASSIST");
         assistIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         try {
             context.startActivity(assistIntent);
