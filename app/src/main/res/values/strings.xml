@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ShakeGemini</string>
+    <string name="accessibility_service_description">Automatically triggers voice message mode by tapping the microphone button when Gemini opens after shaking your phone.</string>
+</resources>

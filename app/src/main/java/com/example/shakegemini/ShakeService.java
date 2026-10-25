@@ -3,24 +3,31 @@ package com.example.shakegemini;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.util.Log;
 
 public class ShakeService extends Service implements SensorEventListener {
 
+    private static final String TAG = "ShakeService";
+    public static final String PACKAGE_GEMINI = "com.google.android.apps.bard";
+    private static final int COOLDOWN_MS = 1500;
+
     private SensorManager sensorManager;
     private SharedPreferences prefs;
-    private static final int COOLDOWN_MS = 1500;
     private long lastShakeTime = 0;
 
     @Override
@@ -40,14 +47,20 @@ public class ShakeService extends Service implements SensorEventListener {
         String channelId = "shake_gemini_channel";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    channelId, "Shake to Gemini Listener", NotificationManager.IMPORTANCE_LOW);
+                    channelId, "Shake to Gemini Service", NotificationManager.IMPORTANCE_LOW);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
 
+            Intent openAppIntent = new Intent(this, MainActivity.class);
+            PendingIntent pendingIntent = PendingIntent.getActivity(
+                    this, 0, openAppIntent,
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+
             Notification notification = new Notification.Builder(this, channelId)
-                    .setContentTitle("Shake to Gemini Ready")
-                    .setContentText("Shake phone to trigger Gemini Voice")
+                    .setContentTitle("Shake to Gemini Active")
+                    .setContentText("Shake phone to trigger Gemini Voice message mode")
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                    .setContentIntent(pendingIntent)
                     .build();
 
             startForeground(1, notification);
@@ -69,7 +82,8 @@ public class ShakeService extends Service implements SensorEventListener {
             lastShakeTime = now;
 
             vibrateFeedback();
-            launchGeminiVoice();
+            int mode = prefs.getInt(MainActivity.KEY_MODE, MainActivity.MODE_GEMINI_APP_VOICE);
+            launchGemini(this, mode);
         }
     }
 
@@ -80,12 +94,48 @@ public class ShakeService extends Service implements SensorEventListener {
         }
     }
 
-    private void launchGeminiVoice() {
-        Intent intent = new Intent(Intent.ACTION_VOICE_COMMAND);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+    public static void launchGemini(Context context, int mode) {
+        Log.d(TAG, "Launching Gemini with mode: " + mode);
+
+        if (mode == MainActivity.MODE_GEMINI_APP_VOICE) {
+            GeminiVoiceAccessibilityService.requestAutoVoiceClick();
+        }
+
+        if (mode == MainActivity.MODE_GEMINI_VOICE_ASSIST) {
+            launchVoiceAssistOverlay(context);
+            return;
+        }
+
+        PackageManager pm = context.getPackageManager();
+        Intent launchIntent = pm.getLaunchIntentForPackage(PACKAGE_GEMINI);
+
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            try {
+                context.startActivity(launchIntent);
+                return;
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to launch Gemini package directly", e);
+            }
+        }
+
+        // Fallback: If standalone Gemini package is not installed or failed, try Voice Assist Intent
+        launchVoiceAssistOverlay(context);
+    }
+
+    private static void launchVoiceAssistOverlay(Context context) {
+        Intent assistIntent = new Intent(Intent.ACTION_VOICE_ASSIST);
+        assistIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         try {
-            startActivity(intent);
-        } catch (Exception ignored) {}
+            context.startActivity(assistIntent);
+        } catch (Exception e) {
+            Log.w(TAG, "ACTION_VOICE_ASSIST unavailable, falling back to Gemini web", e);
+            try {
+                Intent webIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://gemini.google.com"));
+                webIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(webIntent);
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override
