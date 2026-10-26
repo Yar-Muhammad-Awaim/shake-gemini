@@ -1,7 +1,6 @@
 package com.example.shakegemini;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -32,9 +31,8 @@ public class MainActivity extends Activity {
     public static final String KEY_THRESHOLD = "threshold";
     public static final String KEY_MODE = "trigger_mode";
 
-    public static final int MODE_VOICE_TO_TEXT = 0; // Speech-to-text dictation (replies in text)
-    public static final int MODE_APP_DIRECT = 1;     // Launch app without auto-mic
-    public static final int MODE_ASSISTANT_OVERLAY = 2; // Voice Assist intent
+    public static final int MODE_LAUNCH_APP = 0;       // Instant AI App Launch
+    public static final int MODE_ASSISTANT_OVERLAY = 1; // System Voice Assist Overlay
 
     private static final float DEFAULT_THRESHOLD = 2.7f;
 
@@ -47,8 +45,6 @@ public class MainActivity extends Activity {
     private List<View> appCardViews = new ArrayList<>();
 
     private TextView statusOverlay;
-    private TextView statusAccessibility;
-    private LinearLayout bannerA11yWarning;
     private Button startStopBtn;
 
     @Override
@@ -57,10 +53,10 @@ public class MainActivity extends Activity {
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         currentAiId = prefs.getString(ShakeService.KEY_SELECTED_AI, ShakeService.DEFAULT_AI);
-        currentMode = prefs.getInt(KEY_MODE, MODE_VOICE_TO_TEXT);
+        currentMode = prefs.getInt(KEY_MODE, MODE_LAUNCH_APP);
         currentThreshold = prefs.getFloat(KEY_THRESHOLD, DEFAULT_THRESHOLD);
 
-        // Dark theme background
+        // Modern dark theme
         ScrollView scrollView = new ScrollView(this);
         scrollView.setBackgroundColor(Color.parseColor("#0F172A")); // Deep Slate 900
 
@@ -71,9 +67,6 @@ public class MainActivity extends Activity {
 
         // Header Section
         buildHeader(root);
-
-        // Warning banner for Accessibility (if not yet enabled)
-        buildA11yBanner(root);
 
         // 1. AI App Selection Section
         buildAiAppSelector(root);
@@ -122,38 +115,20 @@ public class MainActivity extends Activity {
         headerCard.addView(badge);
 
         TextView title = new TextView(this);
-        title.setText("Instant AI Voice Dictation");
+        title.setText("Instant AI Launcher");
         title.setTextSize(22);
         title.setTypeface(null, Typeface.BOLD);
         title.setTextColor(Color.parseColor("#F8FAFC"));
         headerCard.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Shake your phone from any screen to open your selected AI and dictate prompts for coding, planning, or academic research.");
+        subtitle.setText("Shake your phone from any app or home screen to instantly open your selected AI for coding, planning, and academic tasks.");
         subtitle.setTextSize(13);
         subtitle.setTextColor(Color.parseColor("#94A3B8"));
         subtitle.setPadding(0, dpToPx(6), 0, 0);
         headerCard.addView(subtitle);
 
         root.addView(headerCard);
-        addSpacer(root, 16);
-    }
-
-    private void buildA11yBanner(LinearLayout root) {
-        bannerA11yWarning = new LinearLayout(this);
-        bannerA11yWarning.setOrientation(LinearLayout.VERTICAL);
-        bannerA11yWarning.setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14));
-        bannerA11yWarning.setBackground(createCard(Color.parseColor("#422006"), Color.parseColor("#B45309"), 1, dpToPx(14)));
-
-        TextView bannerText = new TextView(this);
-        bannerText.setText("⚠️ Microphone Auto-Trigger is OFF\nTap here to turn on 'ShakeAI Voice Helper' in Accessibility Settings so your AI opens directly in voice dictation mode.");
-        bannerText.setTextColor(Color.parseColor("#FDE68A"));
-        bannerText.setTextSize(12);
-        bannerText.setTypeface(null, Typeface.BOLD);
-        bannerA11yWarning.addView(bannerText);
-
-        bannerA11yWarning.setOnClickListener(v -> openAccessibilitySettings());
-        root.addView(bannerA11yWarning);
         addSpacer(root, 16);
     }
 
@@ -184,13 +159,11 @@ public class MainActivity extends Activity {
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14));
 
-            // Card background: tinted if selected
             int bgColor = isSelected ? Color.parseColor("#1E293B") : Color.parseColor("#141E33");
             int strokeColor = isSelected ? app.accentColor : Color.parseColor("#26334D");
             int strokeWidth = isSelected ? 2 : 1;
             card.setBackground(createCard(bgColor, strokeColor, strokeWidth, dpToPx(14)));
 
-            // Top row: [Radio Indicator + Name] ... [Installed Badge]
             LinearLayout topRow = new LinearLayout(this);
             topRow.setOrientation(LinearLayout.HORIZONTAL);
             topRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -211,7 +184,6 @@ public class MainActivity extends Activity {
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
             topRow.addView(nameView, nameParams);
 
-            // Badge
             TextView badge = new TextView(this);
             badge.setTextSize(11);
             badge.setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3));
@@ -234,7 +206,6 @@ public class MainActivity extends Activity {
             topRow.addView(badge);
             card.addView(topRow);
 
-            // Tagline
             TextView taglineView = new TextView(this);
             taglineView.setText(app.tagline);
             taglineView.setTextSize(12);
@@ -275,17 +246,10 @@ public class MainActivity extends Activity {
 
         RadioGroup radioGroup = new RadioGroup(this);
 
-        RadioButton rbVoice = new RadioButton(this);
-        rbVoice.setId(View.generateViewId());
-        rbVoice.setText("🎙️ Voice-to-Text Mode (Replies in Text) [Recommended]\nOpens AI app and activates the microphone to transcribe your prompt. The AI responds in written text & code.");
-        rbVoice.setTextColor(Color.parseColor("#E2E8F0"));
-        rbVoice.setTextSize(13);
-        rbVoice.setPadding(0, 0, 0, dpToPx(16));
-
         RadioButton rbAppOnly = new RadioButton(this);
         rbAppOnly.setId(View.generateViewId());
-        rbAppOnly.setText("📱 Open App Directly\nOpens your selected AI app to the chat screen without auto-triggering the microphone.");
-        rbAppOnly.setTextColor(Color.parseColor("#CBD5E1"));
+        rbAppOnly.setText("📱 Instant AI App Launch [Recommended]\nOpens your selected AI app directly to the chat prompt box.");
+        rbAppOnly.setTextColor(Color.parseColor("#E2E8F0"));
         rbAppOnly.setTextSize(13);
         rbAppOnly.setPadding(0, 0, 0, dpToPx(16));
 
@@ -295,23 +259,18 @@ public class MainActivity extends Activity {
         rbOverlay.setTextColor(Color.parseColor("#94A3B8"));
         rbOverlay.setTextSize(13);
 
-        radioGroup.addView(rbVoice);
         radioGroup.addView(rbAppOnly);
         radioGroup.addView(rbOverlay);
 
-        if (currentMode == MODE_APP_DIRECT) {
-            rbAppOnly.setChecked(true);
-        } else if (currentMode == MODE_ASSISTANT_OVERLAY) {
+        if (currentMode == MODE_ASSISTANT_OVERLAY) {
             rbOverlay.setChecked(true);
         } else {
-            rbVoice.setChecked(true);
+            rbAppOnly.setChecked(true);
         }
 
         radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            int newMode = MODE_VOICE_TO_TEXT;
-            if (checkedId == rbAppOnly.getId()) {
-                newMode = MODE_APP_DIRECT;
-            } else if (checkedId == rbOverlay.getId()) {
+            int newMode = MODE_LAUNCH_APP;
+            if (checkedId == rbOverlay.getId()) {
                 newMode = MODE_ASSISTANT_OVERLAY;
             }
             currentMode = newMode;
@@ -385,40 +344,18 @@ public class MainActivity extends Activity {
         card.setBackground(createCard(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 1, dpToPx(16)));
 
         statusOverlay = new TextView(this);
-        statusOverlay.setPadding(0, 0, 0, dpToPx(10));
+        statusOverlay.setPadding(0, 0, 0, dpToPx(14));
         card.addView(statusOverlay);
 
-        statusAccessibility = new TextView(this);
-        statusAccessibility.setPadding(0, 0, 0, dpToPx(14));
-        card.addView(statusAccessibility);
-
-        LinearLayout buttonsRow = new LinearLayout(this);
-        buttonsRow.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button btnA11y = createStyledButton("Open Accessibility", Color.parseColor("#334155"), Color.parseColor("#E2E8F0"));
-        btnA11y.setTextSize(12);
-        btnA11y.setOnClickListener(v -> openAccessibilitySettings());
-
-        Button btnAssistant = createStyledButton("Digital Assistant", Color.parseColor("#334155"), Color.parseColor("#E2E8F0"));
-        btnAssistant.setTextSize(12);
-        btnAssistant.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS));
-            } catch (Exception e) {
-                try {
-                    startActivity(new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS));
-                } catch (Exception ignored) {}
-            }
+        Button btnOverlay = createStyledButton("Grant 'Display Over Other Apps'", Color.parseColor("#334155"), Color.parseColor("#E2E8F0"));
+        btnOverlay.setTextSize(12);
+        btnOverlay.setOnClickListener(v -> {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
         });
+        card.addView(btnOverlay);
 
-        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
-        p1.setMargins(0, 0, dpToPx(8), 0);
-        buttonsRow.addView(btnA11y, p1);
-
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
-        buttonsRow.addView(btnAssistant, p2);
-
-        card.addView(buttonsRow);
         root.addView(card);
     }
 
@@ -441,13 +378,9 @@ public class MainActivity extends Activity {
         Button testBtn = createStyledButton("⚡ Test Shake Trigger Now", Color.parseColor("#1E293B"), Color.parseColor("#38BDF8"));
         testBtn.setTypeface(null, Typeface.BOLD);
         testBtn.setOnClickListener(v -> {
-            if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this) && currentMode == MODE_VOICE_TO_TEXT) {
-                showAccessibilityPromptDialog();
-            } else {
-                ShakeService.AiAppInfo app = ShakeService.getAiApp(currentAiId);
-                Toast.makeText(this, "Testing " + app.name + " launch & voice...", Toast.LENGTH_SHORT).show();
-                ShakeService.launchSelectedAi(this, currentMode, currentAiId);
-            }
+            ShakeService.AiAppInfo app = ShakeService.getAiApp(currentAiId);
+            Toast.makeText(this, "Testing " + app.name + " launch...", Toast.LENGTH_SHORT).show();
+            ShakeService.launchSelectedAi(this, currentMode, currentAiId);
         });
         root.addView(testBtn);
     }
@@ -481,7 +414,7 @@ public class MainActivity extends Activity {
         tipsCard.addView(tipsTitle);
 
         TextView tipsText = new TextView(this);
-        tipsText.setText("• Lock ShakeAI in your Recents app switcher to keep it always alive.\n• Set Battery Optimization to 'Don't Optimize' / 'Unrestricted'.\n• Turn ON 'ShakeAI Voice Helper' in Accessibility for automatic microphone activation.");
+        tipsText.setText("• Lock ShakeAI in your Recents app switcher to keep it always alive.\n• Set Battery Optimization to 'Don't Optimize' / 'Unrestricted'.\n• Grant 'Display Over Other Apps' so it can launch from the lock screen or home screen.");
         tipsText.setTextSize(11);
         tipsText.setTextColor(Color.parseColor("#64748B"));
         tipsCard.addView(tipsText);
@@ -498,30 +431,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this) && currentMode == MODE_VOICE_TO_TEXT) {
-            showAccessibilityPromptDialog();
-            return;
-        }
-
         startShakeService();
-    }
-
-    private void showAccessibilityPromptDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Enable Voice Auto-Trigger")
-                .setMessage("To automatically tap the Microphone button inside your AI app when you shake, enable 'ShakeAI Voice Helper' in Accessibility Settings.\n\nTap 'Enable Now' -> Look for 'Installed Services' or 'Downloaded Apps' -> Turn 'ShakeAI Voice Helper' ON.")
-                .setPositiveButton("Enable Now", (d, w) -> openAccessibilitySettings())
-                .setNegativeButton("Skip for Now", (d, w) -> startShakeService())
-                .show();
-    }
-
-    private void openAccessibilitySettings() {
-        try {
-            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            Toast.makeText(this, "Find 'ShakeAI Voice Helper' in Installed Services and turn it ON", Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "Unable to open Accessibility Settings", Toast.LENGTH_SHORT).show();
-        }
     }
 
     private void startShakeService() {
@@ -548,12 +458,6 @@ public class MainActivity extends Activity {
         boolean hasOverlay = Settings.canDrawOverlays(this);
         statusOverlay.setText("• Display Over Other Apps: " + (hasOverlay ? "Granted ✓" : "Missing ✕ (Required)"));
         statusOverlay.setTextColor(hasOverlay ? Color.parseColor("#4ADE80") : Color.parseColor("#F87171"));
-
-        boolean a11yActive = GeminiVoiceAccessibilityService.isAccessibilityEnabled(this);
-        statusAccessibility.setText("• Voice Auto-Trigger Helper: " + (a11yActive ? "Active ✓" : "Disabled ✕ (Required for Mic Auto-Click)"));
-        statusAccessibility.setTextColor(a11yActive ? Color.parseColor("#4ADE80") : Color.parseColor("#F87171"));
-
-        bannerA11yWarning.setVisibility(a11yActive ? View.GONE : View.VISIBLE);
     }
 
     private boolean isPackageInstalled(String pkgName) {

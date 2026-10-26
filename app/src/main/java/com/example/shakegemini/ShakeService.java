@@ -112,7 +112,7 @@ public class ShakeService extends Service implements SensorEventListener {
 
             Notification notification = new Notification.Builder(this, channelId)
                     .setContentTitle("Shake to " + app.name + " Active")
-                    .setContentText("Shake phone to trigger " + app.name + " (replies in text)")
+                    .setContentText("Shake phone to open " + app.name)
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .setContentIntent(pendingIntent)
                     .build();
@@ -136,7 +136,7 @@ public class ShakeService extends Service implements SensorEventListener {
             lastShakeTime = now;
 
             vibrateFeedback();
-            int mode = prefs.getInt(MainActivity.KEY_MODE, MainActivity.MODE_VOICE_TO_TEXT);
+            int mode = prefs.getInt(MainActivity.KEY_MODE, MainActivity.MODE_LAUNCH_APP);
             String aiId = prefs.getString(KEY_SELECTED_AI, DEFAULT_AI);
             launchSelectedAi(this, mode, aiId);
         }
@@ -152,10 +152,6 @@ public class ShakeService extends Service implements SensorEventListener {
     public static void launchSelectedAi(Context context, int mode, String aiId) {
         AiAppInfo app = getAiApp(aiId);
         Log.d(TAG, "Launching AI: " + app.name + " with mode " + mode);
-
-        if (mode == MainActivity.MODE_VOICE_TO_TEXT) {
-            GeminiVoiceAccessibilityService.requestAutoVoiceClick();
-        }
 
         if (mode == MainActivity.MODE_ASSISTANT_OVERLAY) {
             launchAssistantOverlay(context);
