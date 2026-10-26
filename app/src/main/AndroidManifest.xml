@@ -8,6 +8,10 @@
     <queries>
         <package android:name="com.google.android.apps.bard" />
         <package android:name="com.google.android.googlequicksearchbox" />
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.anthropic.claude" />
+        <package android:name="com.deepseek.chat" />
+        <package android:name="ai.perplexity.app.android" />
         <intent>
             <action android:name="android.intent.action.VOICE_ASSIST" />
         </intent>
@@ -17,9 +21,9 @@
     </queries>
 
     <application
-        android:label="ShakeGemini"
+        android:label="ShakeAI"
         android:icon="@android:drawable/ic_btn_speak_now"
-        android:theme="@android:style/Theme.DeviceDefault.Light.DarkActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity
             android:name=".MainActivity"
@@ -37,7 +41,7 @@
 
         <service
             android:name=".GeminiVoiceAccessibilityService"
-            android:label="ShakeGemini Voice Helper"
+            android:label="ShakeAI Voice Helper"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

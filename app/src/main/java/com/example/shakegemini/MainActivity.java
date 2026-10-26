@@ -7,10 +7,12 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -20,6 +22,8 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -28,189 +32,318 @@ public class MainActivity extends Activity {
     public static final String KEY_THRESHOLD = "threshold";
     public static final String KEY_MODE = "trigger_mode";
 
-    public static final int MODE_GEMINI_APP_VOICE = 0;
-    public static final int MODE_GEMINI_VOICE_ASSIST = 1;
-    public static final int MODE_GEMINI_APP_DIRECT = 2;
+    public static final int MODE_VOICE_TO_TEXT = 0; // Speech-to-text dictation (replies in text)
+    public static final int MODE_APP_DIRECT = 1;     // Launch app without auto-mic
+    public static final int MODE_ASSISTANT_OVERLAY = 2; // Voice Assist intent
 
     private static final float DEFAULT_THRESHOLD = 2.7f;
 
     private SharedPreferences prefs;
-    private TextView statusGeminiApp;
-    private TextView statusAccessibility;
+    private String currentAiId;
+    private int currentMode;
+    private float currentThreshold;
+
+    private LinearLayout appsContainer;
+    private List<View> appCardViews = new ArrayList<>();
+
     private TextView statusOverlay;
+    private TextView statusAccessibility;
     private LinearLayout bannerA11yWarning;
+    private Button startStopBtn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        float currentThreshold = prefs.getFloat(KEY_THRESHOLD, DEFAULT_THRESHOLD);
-        int currentMode = prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE);
+        currentAiId = prefs.getString(ShakeService.KEY_SELECTED_AI, ShakeService.DEFAULT_AI);
+        currentMode = prefs.getInt(KEY_MODE, MODE_VOICE_TO_TEXT);
+        currentThreshold = prefs.getFloat(KEY_THRESHOLD, DEFAULT_THRESHOLD);
 
+        // Dark theme background
         ScrollView scrollView = new ScrollView(this);
+        scrollView.setBackgroundColor(Color.parseColor("#0F172A")); // Deep Slate 900
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(48, 56, 48, 64);
+        root.setPadding(dpToPx(18), dpToPx(24), dpToPx(18), dpToPx(36));
         scrollView.addView(root);
 
-        // Header
+        // Header Section
+        buildHeader(root);
+
+        // Warning banner for Accessibility (if not yet enabled)
+        buildA11yBanner(root);
+
+        // 1. AI App Selection Section
+        buildAiAppSelector(root);
+
+        addSpacer(root, 22);
+
+        // 2. Mode Selector Section
+        buildModeSelector(root);
+
+        addSpacer(root, 22);
+
+        // 3. Sensitivity Slider Section
+        buildSensitivityCard(root);
+
+        addSpacer(root, 22);
+
+        // 4. System Readiness & Permissions Card
+        buildStatusCard(root);
+
+        addSpacer(root, 26);
+
+        // 5. Action Buttons (Start / Stop & Test)
+        buildActionButtons(root);
+
+        addSpacer(root, 24);
+
+        // 6. Device Tips (Infinix Hot 12 Pro / Android 12)
+        buildDeviceTips(root);
+
+        setContentView(scrollView);
+        updateStatus();
+    }
+
+    private void buildHeader(LinearLayout root) {
+        LinearLayout headerCard = new LinearLayout(this);
+        headerCard.setOrientation(LinearLayout.VERTICAL);
+        headerCard.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
+        headerCard.setBackground(createCard(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 1, dpToPx(18)));
+
+        TextView badge = new TextView(this);
+        badge.setText("⚡ SHAKE TO AI ASSISTANT");
+        badge.setTextSize(11);
+        badge.setTypeface(null, Typeface.BOLD);
+        badge.setTextColor(Color.parseColor("#38BDF8"));
+        badge.setPadding(0, 0, 0, dpToPx(8));
+        headerCard.addView(badge);
+
         TextView title = new TextView(this);
-        title.setText("Shake to Gemini Voice");
+        title.setText("Instant AI Voice Dictation");
         title.setTextSize(22);
         title.setTypeface(null, Typeface.BOLD);
-        title.setPadding(0, 0, 0, 10);
+        title.setTextColor(Color.parseColor("#F8FAFC"));
+        headerCard.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Shake phone to launch Gemini and dictate your prompt using the microphone. Gemini replies with text & code formatting (not spoken voice).");
-        subtitle.setTextSize(14);
-        subtitle.setTextColor(Color.DKGRAY);
-        subtitle.setPadding(0, 0, 0, 30);
+        subtitle.setText("Shake your phone from any screen to open your selected AI and dictate prompts for coding, planning, or academic research.");
+        subtitle.setTextSize(13);
+        subtitle.setTextColor(Color.parseColor("#94A3B8"));
+        subtitle.setPadding(0, dpToPx(6), 0, 0);
+        headerCard.addView(subtitle);
 
-        root.addView(title);
-        root.addView(subtitle);
+        root.addView(headerCard);
+        addSpacer(root, 16);
+    }
 
-        // Accessibility Missing Banner (visible when A11y is disabled)
+    private void buildA11yBanner(LinearLayout root) {
         bannerA11yWarning = new LinearLayout(this);
         bannerA11yWarning.setOrientation(LinearLayout.VERTICAL);
-        bannerA11yWarning.setPadding(32, 24, 32, 24);
-        bannerA11yWarning.setBackgroundColor(Color.parseColor("#FEF3C7")); // warm amber
+        bannerA11yWarning.setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14));
+        bannerA11yWarning.setBackground(createCard(Color.parseColor("#422006"), Color.parseColor("#B45309"), 1, dpToPx(14)));
 
         TextView bannerText = new TextView(this);
-        bannerText.setText("⚠️ Microphone Auto-Trigger is OFF\nTap here to turn on 'ShakeGemini Voice Helper' in Accessibility Settings so Gemini starts directly in microphone mode.");
-        bannerText.setTextColor(Color.parseColor("#92400E"));
-        bannerText.setTextSize(13);
+        bannerText.setText("⚠️ Microphone Auto-Trigger is OFF\nTap here to turn on 'ShakeAI Voice Helper' in Accessibility Settings so your AI opens directly in voice dictation mode.");
+        bannerText.setTextColor(Color.parseColor("#FDE68A"));
+        bannerText.setTextSize(12);
         bannerText.setTypeface(null, Typeface.BOLD);
         bannerA11yWarning.addView(bannerText);
+
         bannerA11yWarning.setOnClickListener(v -> openAccessibilitySettings());
-
-        LinearLayout.LayoutParams bannerParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bannerParams.setMargins(0, 0, 0, 30);
-        bannerA11yWarning.setLayoutParams(bannerParams);
         root.addView(bannerA11yWarning);
+        addSpacer(root, 16);
+    }
 
-        // System Status Card
-        LinearLayout statusCard = new LinearLayout(this);
-        statusCard.setOrientation(LinearLayout.VERTICAL);
-        statusCard.setPadding(32, 28, 32, 28);
-        statusCard.setBackgroundColor(Color.parseColor("#F1F5F9"));
+    private void buildAiAppSelector(LinearLayout root) {
+        TextView sectionTitle = new TextView(this);
+        sectionTitle.setText("1. Choose Your AI App");
+        sectionTitle.setTextSize(15);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setTextColor(Color.parseColor("#F1F5F9"));
+        sectionTitle.setPadding(0, 0, 0, dpToPx(10));
+        root.addView(sectionTitle);
 
-        TextView statusTitle = new TextView(this);
-        statusTitle.setText("Setup & Permissions Status:");
-        statusTitle.setTypeface(null, Typeface.BOLD);
-        statusTitle.setPadding(0, 0, 0, 16);
-        statusCard.addView(statusTitle);
+        appsContainer = new LinearLayout(this);
+        appsContainer.setOrientation(LinearLayout.VERTICAL);
+        renderAiAppCards();
+        root.addView(appsContainer);
+    }
 
-        statusOverlay = new TextView(this);
-        statusCard.addView(statusOverlay);
+    private void renderAiAppCards() {
+        appsContainer.removeAllViews();
+        appCardViews.clear();
 
-        statusGeminiApp = new TextView(this);
-        statusCard.addView(statusGeminiApp);
+        for (ShakeService.AiAppInfo app : ShakeService.SUPPORTED_APPS) {
+            boolean isSelected = app.id.equalsIgnoreCase(currentAiId);
+            boolean isInstalled = isPackageInstalled(app.packageName);
 
-        statusAccessibility = new TextView(this);
-        statusCard.addView(statusAccessibility);
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14));
 
-        // Quick settings buttons
-        LinearLayout setupButtons = new LinearLayout(this);
-        setupButtons.setOrientation(LinearLayout.HORIZONTAL);
-        setupButtons.setPadding(0, 16, 0, 0);
+            // Card background: tinted if selected
+            int bgColor = isSelected ? Color.parseColor("#1E293B") : Color.parseColor("#141E33");
+            int strokeColor = isSelected ? app.accentColor : Color.parseColor("#26334D");
+            int strokeWidth = isSelected ? 2 : 1;
+            card.setBackground(createCard(bgColor, strokeColor, strokeWidth, dpToPx(14)));
 
-        Button btnA11y = new Button(this);
-        btnA11y.setText("1. Open Accessibility");
-        btnA11y.setTextSize(12);
-        btnA11y.setOnClickListener(v -> openAccessibilitySettings());
+            // Top row: [Radio Indicator + Name] ... [Installed Badge]
+            LinearLayout topRow = new LinearLayout(this);
+            topRow.setOrientation(LinearLayout.HORIZONTAL);
+            topRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        Button btnAssistant = new Button(this);
-        btnAssistant.setText("2. Digital Assistant");
-        btnAssistant.setTextSize(12);
-        btnAssistant.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS));
-            } catch (Exception e) {
-                try {
-                    startActivity(new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS));
-                } catch (Exception ignored) {}
+            TextView indicator = new TextView(this);
+            indicator.setText(isSelected ? "◉ " : "○ ");
+            indicator.setTextSize(16);
+            indicator.setTextColor(isSelected ? app.accentColor : Color.parseColor("#64748B"));
+            topRow.addView(indicator);
+
+            TextView nameView = new TextView(this);
+            nameView.setText(app.name);
+            nameView.setTextSize(16);
+            nameView.setTypeface(null, Typeface.BOLD);
+            nameView.setTextColor(isSelected ? app.accentColor : Color.parseColor("#F8FAFC"));
+
+            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+            topRow.addView(nameView, nameParams);
+
+            // Badge
+            TextView badge = new TextView(this);
+            badge.setTextSize(11);
+            badge.setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3));
+            if (isInstalled) {
+                badge.setText("Installed ✓");
+                badge.setTextColor(Color.parseColor("#4ADE80"));
+                badge.setBackground(createCard(Color.parseColor("#064E3B"), Color.parseColor("#059669"), 1, dpToPx(10)));
+            } else {
+                badge.setText("Install App ↗");
+                badge.setTextColor(Color.parseColor("#FDBA74"));
+                badge.setBackground(createCard(Color.parseColor("#451A03"), Color.parseColor("#D97706"), 1, dpToPx(10)));
+                badge.setOnClickListener(v -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + app.packageName)));
+                    } catch (Exception e) {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(app.webUrl)));
+                    }
+                });
             }
-        });
+            topRow.addView(badge);
+            card.addView(topRow);
 
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
-        btnParams.setMargins(0, 0, 12, 0);
-        setupButtons.addView(btnA11y, btnParams);
+            // Tagline
+            TextView taglineView = new TextView(this);
+            taglineView.setText(app.tagline);
+            taglineView.setTextSize(12);
+            taglineView.setTextColor(Color.parseColor("#94A3B8"));
+            taglineView.setPadding(dpToPx(24), dpToPx(4), 0, 0);
+            card.addView(taglineView);
 
-        LinearLayout.LayoutParams btnParams2 = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
-        setupButtons.addView(btnAssistant, btnParams2);
+            card.setOnClickListener(v -> {
+                currentAiId = app.id;
+                prefs.edit().putString(ShakeService.KEY_SELECTED_AI, currentAiId).apply();
+                renderAiAppCards();
+                Toast.makeText(this, "Shake target set to " + app.name, Toast.LENGTH_SHORT).show();
+            });
 
-        statusCard.addView(setupButtons);
-        root.addView(statusCard);
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            cardParams.setMargins(0, 0, 0, dpToPx(10));
+            card.setLayoutParams(cardParams);
 
-        addSpacer(root, 36);
+            appsContainer.addView(card);
+            appCardViews.add(card);
+        }
+    }
 
-        // Trigger Mode Section
-        TextView modeTitle = new TextView(this);
-        modeTitle.setText("Shake Trigger Mode:");
-        modeTitle.setTypeface(null, Typeface.BOLD);
-        modeTitle.setTextSize(16);
-        modeTitle.setPadding(0, 0, 0, 12);
-        root.addView(modeTitle);
+    private void buildModeSelector(LinearLayout root) {
+        TextView sectionTitle = new TextView(this);
+        sectionTitle.setText("2. Interaction Mode");
+        sectionTitle.setTextSize(15);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setTextColor(Color.parseColor("#F1F5F9"));
+        sectionTitle.setPadding(0, 0, 0, dpToPx(10));
+        root.addView(sectionTitle);
+
+        LinearLayout modeCard = new LinearLayout(this);
+        modeCard.setOrientation(LinearLayout.VERTICAL);
+        modeCard.setPadding(dpToPx(18), dpToPx(16), dpToPx(18), dpToPx(16));
+        modeCard.setBackground(createCard(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 1, dpToPx(16)));
 
         RadioGroup radioGroup = new RadioGroup(this);
 
-        RadioButton rbAppVoice = new RadioButton(this);
-        rbAppVoice.setId(View.generateViewId());
-        rbAppVoice.setText("1. Voice Message Mode (Replies in Text) [Recommended]\nOpens Gemini and taps the Microphone so you speak your prompt. Gemini replies in formatted text & code (NOT spoken voice).");
-        rbAppVoice.setPadding(0, 0, 0, 16);
-
-        RadioButton rbOverlay = new RadioButton(this);
-        rbOverlay.setId(View.generateViewId());
-        rbOverlay.setText("2. Gemini Live / Voice Mode (Replies in Voice)\nStarts continuous two-way audio where Gemini speaks back in voice.");
-        rbOverlay.setPadding(0, 0, 0, 16);
+        RadioButton rbVoice = new RadioButton(this);
+        rbVoice.setId(View.generateViewId());
+        rbVoice.setText("🎙️ Voice-to-Text Mode (Replies in Text) [Recommended]\nOpens AI app and activates the microphone to transcribe your prompt. The AI responds in written text & code.");
+        rbVoice.setTextColor(Color.parseColor("#E2E8F0"));
+        rbVoice.setTextSize(13);
+        rbVoice.setPadding(0, 0, 0, dpToPx(16));
 
         RadioButton rbAppOnly = new RadioButton(this);
         rbAppOnly.setId(View.generateViewId());
-        rbAppOnly.setText("3. Gemini App (Standard Open)\nOpens Gemini without auto-triggering microphone.");
+        rbAppOnly.setText("📱 Open App Directly\nOpens your selected AI app to the chat screen without auto-triggering the microphone.");
+        rbAppOnly.setTextColor(Color.parseColor("#CBD5E1"));
+        rbAppOnly.setTextSize(13);
+        rbAppOnly.setPadding(0, 0, 0, dpToPx(16));
 
-        radioGroup.addView(rbAppVoice);
-        radioGroup.addView(rbOverlay);
+        RadioButton rbOverlay = new RadioButton(this);
+        rbOverlay.setId(View.generateViewId());
+        rbOverlay.setText("⚡ System Assistant Overlay\nInvokes device digital assistant overlay (Gemini / Google Voice).");
+        rbOverlay.setTextColor(Color.parseColor("#94A3B8"));
+        rbOverlay.setTextSize(13);
+
+        radioGroup.addView(rbVoice);
         radioGroup.addView(rbAppOnly);
+        radioGroup.addView(rbOverlay);
 
-        if (currentMode == MODE_GEMINI_VOICE_ASSIST) {
-            rbOverlay.setChecked(true);
-        } else if (currentMode == MODE_GEMINI_APP_DIRECT) {
+        if (currentMode == MODE_APP_DIRECT) {
             rbAppOnly.setChecked(true);
+        } else if (currentMode == MODE_ASSISTANT_OVERLAY) {
+            rbOverlay.setChecked(true);
         } else {
-            rbAppVoice.setChecked(true);
+            rbVoice.setChecked(true);
         }
 
         radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            int newMode = MODE_GEMINI_APP_VOICE;
-            if (checkedId == rbOverlay.getId()) {
-                newMode = MODE_GEMINI_VOICE_ASSIST;
-            } else if (checkedId == rbAppOnly.getId()) {
-                newMode = MODE_GEMINI_APP_DIRECT;
+            int newMode = MODE_VOICE_TO_TEXT;
+            if (checkedId == rbAppOnly.getId()) {
+                newMode = MODE_APP_DIRECT;
+            } else if (checkedId == rbOverlay.getId()) {
+                newMode = MODE_ASSISTANT_OVERLAY;
             }
+            currentMode = newMode;
             prefs.edit().putInt(KEY_MODE, newMode).apply();
-            Toast.makeText(this, "Trigger mode updated!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Mode updated!", Toast.LENGTH_SHORT).show();
         });
 
-        root.addView(radioGroup);
+        modeCard.addView(radioGroup);
+        root.addView(modeCard);
+    }
 
-        addSpacer(root, 36);
+    private void buildSensitivityCard(LinearLayout root) {
+        TextView sectionTitle = new TextView(this);
+        sectionTitle.setText("3. Shake Sensitivity");
+        sectionTitle.setTextSize(15);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setTextColor(Color.parseColor("#F1F5F9"));
+        sectionTitle.setPadding(0, 0, 0, dpToPx(10));
+        root.addView(sectionTitle);
 
-        // Sensitivity Section
-        TextView thresholdTitle = new TextView(this);
-        thresholdTitle.setText("Shake Sensitivity:");
-        thresholdTitle.setTypeface(null, Typeface.BOLD);
-        thresholdTitle.setTextSize(16);
-        thresholdTitle.setPadding(0, 0, 0, 8);
-        root.addView(thresholdTitle);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dpToPx(18), dpToPx(16), dpToPx(18), dpToPx(16));
+        card.setBackground(createCard(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 1, dpToPx(16)));
 
         TextView thresholdLabel = new TextView(this);
         thresholdLabel.setText(formatLabel(currentThreshold));
-        thresholdLabel.setPadding(0, 0, 0, 16);
-        root.addView(thresholdLabel);
+        thresholdLabel.setTextColor(Color.parseColor("#38BDF8"));
+        thresholdLabel.setTypeface(null, Typeface.BOLD);
+        thresholdLabel.setTextSize(14);
+        thresholdLabel.setPadding(0, 0, 0, dpToPx(14));
+        card.addView(thresholdLabel);
 
         SeekBar seekBar = new SeekBar(this);
         seekBar.setMax(30);
@@ -233,63 +366,139 @@ public class MainActivity extends Activity {
                 Toast.makeText(MainActivity.this, "Sensitivity saved!", Toast.LENGTH_SHORT).show();
             }
         });
-        root.addView(seekBar);
+        card.addView(seekBar);
+        root.addView(card);
+    }
 
-        addSpacer(root, 36);
+    private void buildStatusCard(LinearLayout root) {
+        TextView sectionTitle = new TextView(this);
+        sectionTitle.setText("4. System Readiness");
+        sectionTitle.setTextSize(15);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setTextColor(Color.parseColor("#F1F5F9"));
+        sectionTitle.setPadding(0, 0, 0, dpToPx(10));
+        root.addView(sectionTitle);
 
-        // Action Buttons
-        Button startBtn = new Button(this);
-        startBtn.setText("1. Start Shake Listener Service");
-        startBtn.setOnClickListener(v -> checkPermissionsAndStartService());
-        root.addView(startBtn);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dpToPx(18), dpToPx(16), dpToPx(18), dpToPx(16));
+        card.setBackground(createCard(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 1, dpToPx(16)));
 
-        Button testBtn = new Button(this);
-        testBtn.setText("2. Test Gemini Voice Trigger Now");
+        statusOverlay = new TextView(this);
+        statusOverlay.setPadding(0, 0, 0, dpToPx(10));
+        card.addView(statusOverlay);
+
+        statusAccessibility = new TextView(this);
+        statusAccessibility.setPadding(0, 0, 0, dpToPx(14));
+        card.addView(statusAccessibility);
+
+        LinearLayout buttonsRow = new LinearLayout(this);
+        buttonsRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button btnA11y = createStyledButton("Open Accessibility", Color.parseColor("#334155"), Color.parseColor("#E2E8F0"));
+        btnA11y.setTextSize(12);
+        btnA11y.setOnClickListener(v -> openAccessibilitySettings());
+
+        Button btnAssistant = createStyledButton("Digital Assistant", Color.parseColor("#334155"), Color.parseColor("#E2E8F0"));
+        btnAssistant.setTextSize(12);
+        btnAssistant.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS));
+            } catch (Exception e) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS));
+                } catch (Exception ignored) {}
+            }
+        });
+
+        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        p1.setMargins(0, 0, dpToPx(8), 0);
+        buttonsRow.addView(btnA11y, p1);
+
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        buttonsRow.addView(btnAssistant, p2);
+
+        card.addView(buttonsRow);
+        root.addView(card);
+    }
+
+    private void buildActionButtons(LinearLayout root) {
+        startStopBtn = new Button(this);
+        updateStartStopButtonState();
+        startStopBtn.setOnClickListener(v -> {
+            if (ShakeService.isRunning()) {
+                stopService(new Intent(this, ShakeService.class));
+                Toast.makeText(this, "Shake Listener Stopped", Toast.LENGTH_SHORT).show();
+            } else {
+                checkPermissionsAndStartService();
+            }
+            updateStartStopButtonState();
+        });
+        root.addView(startStopBtn);
+
+        addSpacer(root, 12);
+
+        Button testBtn = createStyledButton("⚡ Test Shake Trigger Now", Color.parseColor("#1E293B"), Color.parseColor("#38BDF8"));
+        testBtn.setTypeface(null, Typeface.BOLD);
         testBtn.setOnClickListener(v -> {
-            if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this)
-                    && prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE) == MODE_GEMINI_APP_VOICE) {
+            if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this) && currentMode == MODE_VOICE_TO_TEXT) {
                 showAccessibilityPromptDialog();
             } else {
-                Toast.makeText(this, "Testing Gemini trigger...", Toast.LENGTH_SHORT).show();
-                ShakeService.launchGemini(this, prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE));
+                ShakeService.AiAppInfo app = ShakeService.getAiApp(currentAiId);
+                Toast.makeText(this, "Testing " + app.name + " launch & voice...", Toast.LENGTH_SHORT).show();
+                ShakeService.launchSelectedAi(this, currentMode, currentAiId);
             }
         });
         root.addView(testBtn);
+    }
 
-        Button stopBtn = new Button(this);
-        stopBtn.setText("3. Stop Shake Service");
-        stopBtn.setOnClickListener(v -> {
-            stopService(new Intent(this, ShakeService.class));
-            Toast.makeText(this, "Shake Service Stopped", Toast.LENGTH_SHORT).show();
-        });
-        root.addView(stopBtn);
+    private void updateStartStopButtonState() {
+        if (ShakeService.isRunning()) {
+            startStopBtn.setText("■ Stop Shake Listener");
+            startStopBtn.setTextColor(Color.WHITE);
+            startStopBtn.setTypeface(null, Typeface.BOLD);
+            startStopBtn.setBackground(createCard(Color.parseColor("#DC2626"), Color.parseColor("#EF4444"), 0, dpToPx(14)));
+        } else {
+            startStopBtn.setText("▶ Start Shake Listener");
+            startStopBtn.setTextColor(Color.WHITE);
+            startStopBtn.setTypeface(null, Typeface.BOLD);
+            startStopBtn.setBackground(createCard(Color.parseColor("#2563EB"), Color.parseColor("#3B82F6"), 0, dpToPx(14)));
+        }
+    }
 
-        addSpacer(root, 28);
+    private void buildDeviceTips(LinearLayout root) {
+        LinearLayout tipsCard = new LinearLayout(this);
+        tipsCard.setOrientation(LinearLayout.VERTICAL);
+        tipsCard.setPadding(dpToPx(18), dpToPx(14), dpToPx(18), dpToPx(14));
+        tipsCard.setBackground(createCard(Color.parseColor("#131D31"), Color.parseColor("#1E293B"), 1, dpToPx(14)));
 
-        TextView infinixInfo = new TextView(this);
-        infinixInfo.setText("Infinix Hot 12 Pro (Android 12) Tips:\n" +
-                "• Lock ShakeGemini in Recents screen to prevent background kill.\n" +
-                "• In Settings > Battery Lab > ShakeGemini, choose 'Don't Optimize'.\n" +
-                "• In Accessibility > Installed Services, turn ON 'ShakeGemini Voice Helper'.");
-        infinixInfo.setTextSize(12);
-        infinixInfo.setTextColor(Color.GRAY);
-        root.addView(infinixInfo);
+        TextView tipsTitle = new TextView(this);
+        tipsTitle.setText("💡 Background Reliability (Infinix Hot 12 Pro / Android 12):");
+        tipsTitle.setTextSize(12);
+        tipsTitle.setTypeface(null, Typeface.BOLD);
+        tipsTitle.setTextColor(Color.parseColor("#94A3B8"));
+        tipsTitle.setPadding(0, 0, 0, dpToPx(6));
+        tipsCard.addView(tipsTitle);
 
-        setContentView(scrollView);
-        updateStatus();
+        TextView tipsText = new TextView(this);
+        tipsText.setText("• Lock ShakeAI in your Recents app switcher to keep it always alive.\n• Set Battery Optimization to 'Don't Optimize' / 'Unrestricted'.\n• Turn ON 'ShakeAI Voice Helper' in Accessibility for automatic microphone activation.");
+        tipsText.setTextSize(11);
+        tipsText.setTextColor(Color.parseColor("#64748B"));
+        tipsCard.addView(tipsText);
+
+        root.addView(tipsCard);
     }
 
     private void checkPermissionsAndStartService() {
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Grant 'Display over other apps' to allow launching from background!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Grant 'Display over other apps' to allow shake trigger from anywhere!", Toast.LENGTH_LONG).show();
             Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName()));
             startActivity(intent);
             return;
         }
 
-        if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this)
-                && prefs.getInt(KEY_MODE, MODE_GEMINI_APP_VOICE) == MODE_GEMINI_APP_VOICE) {
+        if (!GeminiVoiceAccessibilityService.isAccessibilityEnabled(this) && currentMode == MODE_VOICE_TO_TEXT) {
             showAccessibilityPromptDialog();
             return;
         }
@@ -300,7 +509,7 @@ public class MainActivity extends Activity {
     private void showAccessibilityPromptDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Enable Voice Auto-Trigger")
-                .setMessage("To automatically tap the Microphone button inside Gemini when you shake, enable 'ShakeGemini Voice Helper' in Accessibility Settings.\n\nTap 'Enable Now' -> Look for 'Installed Services' or 'Downloaded Apps' -> Turn 'ShakeGemini Voice Helper' ON.")
+                .setMessage("To automatically tap the Microphone button inside your AI app when you shake, enable 'ShakeAI Voice Helper' in Accessibility Settings.\n\nTap 'Enable Now' -> Look for 'Installed Services' or 'Downloaded Apps' -> Turn 'ShakeAI Voice Helper' ON.")
                 .setPositiveButton("Enable Now", (d, w) -> openAccessibilitySettings())
                 .setNegativeButton("Skip for Now", (d, w) -> startShakeService())
                 .show();
@@ -309,7 +518,7 @@ public class MainActivity extends Activity {
     private void openAccessibilitySettings() {
         try {
             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            Toast.makeText(this, "Find 'ShakeGemini Voice Helper' in Installed Services and turn it ON", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Find 'ShakeAI Voice Helper' in Installed Services and turn it ON", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Toast.makeText(this, "Unable to open Accessibility Settings", Toast.LENGTH_SHORT).show();
         }
@@ -322,27 +531,27 @@ public class MainActivity extends Activity {
         } else {
             startService(serviceIntent);
         }
-        Toast.makeText(this, "Shake Listener Active! Shake your phone to test.", Toast.LENGTH_SHORT).show();
+        updateStartStopButtonState();
+        ShakeService.AiAppInfo app = ShakeService.getAiApp(currentAiId);
+        Toast.makeText(this, "Shake listener active for " + app.name + "! Shake phone to test.", Toast.LENGTH_SHORT).show();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         updateStatus();
+        renderAiAppCards();
+        updateStartStopButtonState();
     }
 
     private void updateStatus() {
         boolean hasOverlay = Settings.canDrawOverlays(this);
         statusOverlay.setText("• Display Over Other Apps: " + (hasOverlay ? "Granted ✓" : "Missing ✕ (Required)"));
-        statusOverlay.setTextColor(hasOverlay ? Color.parseColor("#166534") : Color.parseColor("#991B1B"));
-
-        boolean hasGemini = isPackageInstalled(ShakeService.PACKAGE_GEMINI);
-        statusGeminiApp.setText("• Gemini App: " + (hasGemini ? "Installed ✓" : "Not Found (Click to Install)"));
-        statusGeminiApp.setTextColor(hasGemini ? Color.parseColor("#166534") : Color.parseColor("#C2410C"));
+        statusOverlay.setTextColor(hasOverlay ? Color.parseColor("#4ADE80") : Color.parseColor("#F87171"));
 
         boolean a11yActive = GeminiVoiceAccessibilityService.isAccessibilityEnabled(this);
         statusAccessibility.setText("• Voice Auto-Trigger Helper: " + (a11yActive ? "Active ✓" : "Disabled ✕ (Required for Mic Auto-Click)"));
-        statusAccessibility.setTextColor(a11yActive ? Color.parseColor("#166534") : Color.parseColor("#DC2626"));
+        statusAccessibility.setTextColor(a11yActive ? Color.parseColor("#4ADE80") : Color.parseColor("#F87171"));
 
         bannerA11yWarning.setVisibility(a11yActive ? View.GONE : View.VISIBLE);
     }
@@ -357,10 +566,32 @@ public class MainActivity extends Activity {
         }
     }
 
+    private Button createStyledButton(String text, int bgColor, int textColor) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setTextColor(textColor);
+        btn.setBackground(createCard(bgColor, Color.parseColor("#475569"), 1, dpToPx(14)));
+        return btn;
+    }
+
+    private GradientDrawable createCard(int bgColor, int strokeColor, int strokeWidthDp, int cornerRadiusPx) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(bgColor);
+        gd.setCornerRadius(cornerRadiusPx);
+        if (strokeWidthDp > 0) {
+            gd.setStroke(dpToPx(strokeWidthDp), strokeColor);
+        }
+        return gd;
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
+    }
+
     private void addSpacer(LinearLayout layout, int heightDp) {
         View spacer = new View(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, heightDp);
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(heightDp));
         spacer.setLayoutParams(params);
         layout.addView(spacer);
     }
@@ -368,12 +599,12 @@ public class MainActivity extends Activity {
     private String formatLabel(float val) {
         String feel;
         if (val < 2.2f) {
-            feel = "Very Sensitive (Light flick)";
+            feel = "Light Flick";
         } else if (val <= 3.0f) {
             feel = "Balanced (Recommended)";
         } else {
-            feel = "Firm Shake (Prevents accidental triggers)";
+            feel = "Firm Shake";
         }
-        return String.format(Locale.US, "Threshold: %.1f G  (%s)", val, feel);
+        return String.format(Locale.US, "Threshold: %.1f G  •  %s", val, feel);
     }
 }
